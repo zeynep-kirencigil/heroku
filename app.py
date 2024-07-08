@@ -46,14 +46,10 @@ def clean_text(Description, stop_words, lemmatizer):
     return cleaned_text
 
 # Modelleri ve vektörleştiriciyi yükleme
-from google.colab import drive
 
-# Loading the dataset
-drive.mount('/content/drive')
-
-priority_model = joblib.load('/content/drive/MyDrive/NLP/priority_model.pkl')
-category_model = joblib.load('/content/drive/MyDrive/NLP/category_model.pkl')
-vectorizer = joblib.load('/content/drive/MyDrive/NLP/tfidf_vectorizer.pkl')
+priority_model = joblib.load('priority_model.pkl')
+category_model = joblib.load('category_model.pkl')
+vectorizer = joblib.load('tfidf_vectorizer.pkl')
 
 @app.route('/predict', methods=['POST'])
 def predict():
