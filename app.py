@@ -1,71 +1,87 @@
 from flask import Flask, request, jsonify
-import zipfile
+from simple_salesforce import Salesforce
 import joblib
-import re
-import string
-#from nltk.corpus import stopwords
-#from nltk.tokenize import word_tokenize
-#from nltk.stem import WordNetLemmatizer
-import nltk
-
-# NLTK veri yolunu ayarla
-nltk_data_path = os.path.join(os.path.dirname(__file__), 'nltk_data')
-if not os.path.exists(nltk_data_path):
-    with zipfile.ZipFile('nltk_data.zip', 'r') as zip_ref:
-        zip_ref.extractall(nltk_data_path)
-nltk.data.path.append(nltk_data_path)
+import requests
 
 app = Flask(__name__)
 
-# Türkçe durak kelimeler listesi
-turkish_stop_words = [
-    'acaba', 'ama', 'ancak', 'arada', 'aslında', 'az', 'bana', 'bazen', 'bazı', 'belki', 'ben', 'biri', 'birkaç',
-    'birçok', 'bu', 'buna', 'bunda', 'bunu', 'bunun', 'da', 'daha', 'de', 'defa', 'diye', 'dolayı', 'fakat',
-    'gibi', 'hem', 'hep', 'hepsi', 'her', 'hiç', 'için', 'ise', 'kez', 'ki', 'kim', 'mı', 'mu', 'mü', 'nasıl',
-    'ne', 'neden', 'nerde', 'nerede', 'nereye', 'niye', 'o', 'sadece', 'sanki', 'şayet', 'şey', 'siz', 'şu',
-    'tüm', 've', 'veya', 'ya', 'yani'
-]
-# İngilizce durak kelimeler listesi
-english_stop_words = set(stopwords.words('english'))
+# Salesforce bağlantı bilgileri
+consumer_key = '3MVG9buXpECUESHh30pZX3pDyGhthnzMbc.X1wGQgEQjPFcWyRq_76ZAg7DTOBChAOxcXyWuNmLVDTf6TW6BS'
+consumer_secret = '4E96C47C752E2B253DFAE9FE9BADD9F72E9D2DBB885CB5518FCB3D802F0C5953'
+username = 'integrationapi@flypgs.com.partial'
+password = 'Pegasus2024*'
+security_token = 'Zu8570EJKA7aUJHZXti5qQMex'
 
-# Tüm durak kelimeler
-stop_words = english_stop_words.union(turkish_stop_words)
+# Salesforce OAuth URL
+auth_url = 'https://test.salesforce.com/services/oauth2/token'
 
-# Lemmatizer
-lemmatizer = WordNetLemmatizer()
+# OAuth Token Request
+data = {
+    'grant_type': 'password',
+    'client_id': consumer_key,
+    'client_secret': consumer_secret,
+    'username': username,
+    'password': password + security_token
+}
 
-# Veri temizleme fonksiyonu
-def clean_text(Description, stop_words, lemmatizer):
-    Description = Description.lower()
-    Description = Description.translate(str.maketrans('', '', string.punctuation))
-    Description = re.sub(r'\d+', '', Description)
-    word_tokens = word_tokenize(Description)
-    filtered_words = [word for word in word_tokens if word not in stop_words]
-    lemmatized_words = [lemmatizer.lemmatize(word) for word in filtered_words]
-    cleaned_text = ' '.join(lemmatized_words)
-    return cleaned_text
+response = requests.post(auth_url, data=data)
+response_data = response.json()
 
-# Modelleri ve vektörleştiriciyi yükleme
+# Erişim belirteci (access token) ve instance URL'si
+access_token = response_data['access_token']
+instance_url = response_data['instance_url']
 
-priority_model = joblib.load('priority_model.pkl')
-category_model = joblib.load('category_model.pkl')
-vectorizer = joblib.load('tfidf_vectorizer.pkl')
+# Salesforce ile bağlantı kurma
+sf = Salesforce(instance_url=instance_url, session_id=access_token)
+
+# Modelleri yükleyin
+import joblib
+
+# Modelinizi yükleyin (örnek bir model yolu)
+from google.colab import drive
+
+drive.mount('/content/drive')
+
+priority_model = joblib.load('/content/drive/MyDrive/NLP/priority_model.pkl')
+category_model = joblib.load('/content/drive/MyDrive/NLP/category_model.pkl')
+vectorizer = joblib.load('/content/drive/MyDrive/NLP/tfidf_vectorizer.pkl')
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    data = request.get_json(force=True)
-    description = data['description']
-    description_tfidf = vectorizer.transform([description])
+    # JSON formatında gelen Case ID'yi alın
+    # data = request.json
+    # case_id = data['case_id']
 
-    priority_prediction = priority_model.predict(description_tfidf)[0]
-    category_prediction = category_model.predict(description_tfidf)[0]
+    # Belirli bir Case kaydını Id değerine göre sorgulama
+    query = "SELECT Id, Description FROM Case WHERE Id = '5003L000000hqTtQAI'"
+    cases = sf.query(query)
 
-    response = {
-        'priority': priority_prediction,
-        'category': category_prediction
-    }
+    # İlk kaydı alalım (zaten sadece bir kayıt dönecek)
+    case = cases['records'][0] if cases['records'] else None
 
-    return jsonify(response)
+    if case:
+        description = case['Description']
 
-if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+        # Description alanı üzerinden tahmin yapmak
+        descriptions = [case['Description'] for case in cases['records']]
+        description_tfidf = vectorizer.transform(descriptions)
+        priority_prediction = priority_model.predict(description_tfidf)
+        category_prediction = category_model.predict(description_tfidf)
+
+        # Tahminleri Salesforce'a geri yazmak
+           update_data = {
+            'Prediction_Priority__c': priority_prediction[0],  # Örneğin, tahminlerin yazılacağı özel bir alan
+            'Priority_Scenario__c': category_prediction[0]
+        }
+        sf.Case.update(case['Id'], update_data)
+
+        return jsonify({
+            'case_id': case['Id'],
+            'priority_prediction': priority_prediction[0],
+            'category_prediction': category_prediction[0]
+        })
+    else:
+        return jsonify({'error': 'No case found'}), 404
+
+if __name__ == '__main__':
+    app.run(debug=True)
