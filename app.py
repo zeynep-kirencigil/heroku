@@ -35,12 +35,9 @@ instance_url = response_data['instance_url']
 # Salesforce ile bağlantı kurma
 sf = Salesforce(instance_url=instance_url, session_id=access_token)
 
-# Google Drive bağlantısı ve modellerin yüklenmesi
-drive.mount('/content/drive')
-
-priority_model = joblib.load('/content/drive/MyDrive/NLP/priority_model.pkl')
-category_model = joblib.load('/content/drive/MyDrive/NLP/category_model.pkl')
-vectorizer = joblib.load('/content/drive/MyDrive/NLP/tfidf_vectorizer.pkl')
+priority_model = joblib.load('priority_model.pkl')
+category_model = joblib.load('category_model.pkl')
+vectorizer = joblib.load('tfidf_vectorizer.pkl')
 
 @app.route('/predict', methods=['POST'])
 def predict():
