@@ -1,7 +1,9 @@
+!pip install simple_salesforce
 from flask import Flask, request, jsonify
 from simple_salesforce import Salesforce
 import joblib
 import requests
+from google.colab import drive
 
 app = Flask(__name__)
 
@@ -34,12 +36,7 @@ instance_url = response_data['instance_url']
 # Salesforce ile bağlantı kurma
 sf = Salesforce(instance_url=instance_url, session_id=access_token)
 
-# Modelleri yükleyin
-import joblib
-
-# Modelinizi yükleyin (örnek bir model yolu)
-from google.colab import drive
-
+# Google Drive bağlantısı ve modellerin yüklenmesi
 drive.mount('/content/drive')
 
 priority_model = joblib.load('/content/drive/MyDrive/NLP/priority_model.pkl')
@@ -48,12 +45,11 @@ vectorizer = joblib.load('/content/drive/MyDrive/NLP/tfidf_vectorizer.pkl')
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    # JSON formatında gelen Case ID'yi alın
-    # data = request.json
-    # case_id = data['case_id']
+    data = request.json
+    case_id = data['case_id']
 
     # Belirli bir Case kaydını Id değerine göre sorgulama
-    query = "SELECT Id, Description FROM Case WHERE Id = '5003L000000hqTtQAI'"
+    query = f"SELECT Id, Description FROM Case WHERE Id = '{case_id}'"
     cases = sf.query(query)
 
     # İlk kaydı alalım (zaten sadece bir kayıt dönecek)
@@ -61,27 +57,23 @@ def predict():
 
     if case:
         description = case['Description']
-
-        # Description alanı üzerinden tahmin yapmak
-        descriptions = [case['Description'] for case in cases['records']]
+        descriptions = [description]
         description_tfidf = vectorizer.transform(descriptions)
+        
+        # Tahminler
         priority_prediction = priority_model.predict(description_tfidf)
         category_prediction = category_model.predict(description_tfidf)
 
         # Tahminleri Salesforce'a geri yazmak
-           update_data = {
+        update_data = {
             'Prediction_Priority__c': priority_prediction[0],  # Örneğin, tahminlerin yazılacağı özel bir alan
             'Priority_Scenario__c': category_prediction[0]
         }
         sf.Case.update(case['Id'], update_data)
 
-        return jsonify({
-            'case_id': case['Id'],
-            'priority_prediction': priority_prediction[0],
-            'category_prediction': category_prediction[0]
-        })
+        return jsonify({'message': 'Case updated successfully.'})
     else:
-        return jsonify({'error': 'No case found'}), 404
+        return jsonify({'message': 'No case found.'})
 
 if __name__ == '__main__':
     app.run(debug=True)
