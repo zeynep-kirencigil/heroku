@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 from simple_salesforce import Salesforce
 import joblib
 import requests
-from google.colab import drive
 
 app = Flask(__name__)
 
