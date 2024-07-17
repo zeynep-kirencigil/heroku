@@ -1,4 +1,3 @@
-!pip install simple_salesforce
 from flask import Flask, request, jsonify
 from simple_salesforce import Salesforce
 import joblib
