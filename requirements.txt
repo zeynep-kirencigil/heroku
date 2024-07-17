@@ -2,3 +2,4 @@ Flask
 simple_salesforce
 joblib
 requests
+sklearn
